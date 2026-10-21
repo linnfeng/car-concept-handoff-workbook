@@ -1,0 +1,61 @@
+name: Publish car concept handoff notebook
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify and prepare the existing complete notebook
+        env:
+          README_SHA256: "717186153c04593db463210d2a14d893cc2633c06e25bddbde29563c7592dbba"
+          TARGET_URL: "https://car-customizer.online/"
+        run: |
+          python - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          source = Path('README.md').read_bytes()
+          assert hashlib.sha256(source).hexdigest() == os.environ['README_SHA256'], 'README changed'
+          text = source.decode('utf-8')
+          assert os.environ['TARGET_URL'] in text, 'Target link missing'
+          assert 'I help promote Car Customizer' in text, 'Disclosure missing'
+          repo = os.environ['GITHUB_REPOSITORY'].split('/', 1)[1]
+          config = 'theme: jekyll-theme-cayman\ntitle: Car concept handoff workbook\ndescription: A manual notebook for limited visual decisions\nbaseurl: /' + repo + '\n'
+          Path('_config.yml').write_text(config, encoding='utf-8')
+          Path('index.md').write_bytes(b'---\nlayout: default\n---\n' + source)
+          assert Path('README.md').read_bytes() == source, 'Original notebook was modified'
+          PY
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
